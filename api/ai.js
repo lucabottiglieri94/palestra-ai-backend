@@ -3,24 +3,32 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
-  if (req.method === 'OPTIONS') {
-    return res.status(204).end();
-  }
-
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Metodo non consentito' });
-  }
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo non consentito' });
 
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return res.status(500).json({ error: 'GEMINI_API_KEY non configurata su Vercel' });
-  }
+  if (!apiKey) return res.status(500).json({ error: 'GEMINI_API_KEY non configurata su Vercel' });
 
   try {
-    const { prompt, systemInstruction, temperature = 0.7, maxOutputTokens = 2048 } = req.body || {};
+    const body = req.body || {};
+    const payload = body.payload || {
+      ...(body.systemInstruction
+        ? { system_instruction: { parts: [{ text: body.systemInstruction }] } }
+        : {}),
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: body.prompt || '' }]
+        }
+      ],
+      generationConfig: {
+        temperature: body.temperature ?? 0.7,
+        maxOutputTokens: body.maxOutputTokens ?? 2048
+      }
+    };
 
-    if (!prompt || typeof prompt !== 'string') {
-      return res.status(400).json({ error: 'Il campo prompt è obbligatorio' });
+    if (!payload.contents || !Array.isArray(payload.contents)) {
+      return res.status(400).json({ error: 'Payload Gemini non valido' });
     }
 
     const response = await fetch(
@@ -28,40 +36,18 @@ export default async function handler(req, res) {
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...(systemInstruction
-            ? { system_instruction: { parts: [{ text: systemInstruction }] } }
-            : {}),
-          contents: [
-            {
-              role: 'user',
-              parts: [{ text: prompt }]
-            }
-          ],
-          generationConfig: {
-            temperature,
-            maxOutputTokens
-          }
-        })
+        body: JSON.stringify(payload)
       }
     );
 
     const data = await response.json();
-
     if (!response.ok) {
-      return res.status(response.status).json({
-        error: data?.error?.message || 'Errore nella risposta Gemini'
-      });
+      return res.status(response.status).json({ error: data?.error?.message || 'Errore nella risposta Gemini' });
     }
 
-    const text = data?.candidates?.[0]?.content?.parts
-      ?.map(part => part.text || '')
-      .join('') || '';
-
+    const text = data?.candidates?.[0]?.content?.parts?.map(part => part.text || '').join('') || '';
     return res.status(200).json({ text, raw: data });
   } catch (error) {
-    return res.status(500).json({
-      error: error.message || 'Errore interno del backend'
-    });
+    return res.status(500).json({ error: error.message || 'Errore interno del backend' });
   }
 }
