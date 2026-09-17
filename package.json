@@ -1,0 +1,9 @@
+{
+  "name": "palestra-ai-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Backend privato AI per Palestra",
+  "engines": {
+    "node": ">=18"
+  }
+}
