@@ -30,21 +30,32 @@ export default async function handler(req, res) {
     // Coach e Scanner testuale, senza foto, usano Groq.
     if (!hasImage && process.env.GROQ_API_KEY) {
       const userText = body.prompt || payload?.contents?.flatMap(c => c.parts || [])?.map(p => p.text || '').join('\n') || '';
-      const systemText = body.systemInstruction || payload?.system_instruction?.parts?.map(p => p.text || '').join('\n') || '';
+      const systemParts = body.systemInstruction?.parts
+        || payload?.system_instruction?.parts
+        || payload?.systemInstruction?.parts
+        || [];
+      const systemText = systemParts.map(p => p.text || '').join('\n');
       const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
         body: JSON.stringify({
-          model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+          model: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
           messages: [...(systemText ? [{ role: 'system', content: systemText }] : []), { role: 'user', content: userText }],
           temperature: body.temperature ?? 0.7,
-          max_tokens: body.maxOutputTokens ?? 2048
+          max_completion_tokens: body.maxOutputTokens ?? 2048
         })
       });
       const data = await response.json();
       if (response.ok && data?.choices?.[0]?.message?.content) {
         return res.status(200).json({ text: data.choices[0].message.content, raw: data, model: 'groq' });
       }
+      return res.status(response.status || 502).json({
+        error: data?.error?.message || 'Groq non ha restituito una risposta valida.'
+      });
+    }
+
+    if (!hasImage) {
+      return res.status(500).json({ error: 'GROQ_API_KEY non configurata su Vercel' });
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
