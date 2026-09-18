@@ -56,13 +56,13 @@ export default async function handler(req, res) {
     }
 
     if (!hasImage) {
-      return res.status(500).json({ error: 'GROQ_API_KEY non configurata su Vercel' });
+      return res.status(500).json({ error: 'GROQ_API_KEY non configurata su Vercel: richiesta testuale bloccata senza fallback Gemini.' });
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) return res.status(500).json({ error: 'GEMINI_API_KEY non configurata su Vercel' });
     if (!payload.contents || !Array.isArray(payload.contents)) return res.status(400).json({ error: 'Payload Gemini non valido' });
-    const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-flash-lite'];
+    const models = ['gemini-2.5-flash'];
     let lastError = 'Errore nella risposta Gemini';
     for (const model of models) {
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
