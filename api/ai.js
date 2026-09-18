@@ -1,3 +1,4 @@
+// Routing AI: Groq for text/microphone, Gemini Vision only for real images.
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
