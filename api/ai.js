@@ -2,46 +2,48 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo non consentito' });
-
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return res.status(500).json({ error: 'GEMINI_API_KEY non configurata su Vercel' });
 
   try {
     const body = req.body || {};
     const payload = body.payload || {
-      ...(body.systemInstruction
-        ? { system_instruction: { parts: [{ text: body.systemInstruction }] } }
-        : {}),
+      ...(body.systemInstruction ? { system_instruction: { parts: [{ text: body.systemInstruction }] } } : {}),
       contents: [{ role: 'user', parts: [{ text: body.prompt || '' }] }],
-      generationConfig: {
-        temperature: body.temperature ?? 0.7,
-        maxOutputTokens: body.maxOutputTokens ?? 2048
-      }
+      generationConfig: { temperature: body.temperature ?? 0.7, maxOutputTokens: body.maxOutputTokens ?? 2048 }
     };
+    const serialized = JSON.stringify(payload);
+    const hasImage = /inline_data|inlineData|image_url|image\/|base64/i.test(serialized);
 
-    if (!payload.contents || !Array.isArray(payload.contents)) {
-      return res.status(400).json({ error: 'Payload Gemini non valido' });
+    if (!hasImage && process.env.GROQ_API_KEY) {
+      const userText = body.prompt || payload?.contents?.flatMap(c => c.parts || [])?.map(p => p.text || '').join('\n') || '';
+      const systemText = body.systemInstruction || payload?.system_instruction?.parts?.map(p => p.text || '').join('\n') || '';
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
+        body: JSON.stringify({
+          model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+          messages: [...(systemText ? [{ role: 'system', content: systemText }] : []), { role: 'user', content: userText }],
+          temperature: body.temperature ?? 0.7,
+          max_tokens: body.maxOutputTokens ?? 2048
+        })
+      });
+      const data = await response.json();
+      if (response.ok && data?.choices?.[0]?.message?.content) {
+        return res.status(200).json({ text: data.choices[0].message.content, raw: data, model: 'groq' });
+      }
     }
 
-    // Fallback automatico: evita il modello 3.6 hardcoded che può andare in high demand.
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) return res.status(500).json({ error: 'GEMINI_API_KEY non configurata su Vercel' });
+    if (!payload.contents || !Array.isArray(payload.contents)) return res.status(400).json({ error: 'Payload Gemini non valido' });
     const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-flash-lite'];
     let lastError = 'Errore nella risposta Gemini';
-
     for (const model of models) {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        }
-      );
-
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+      });
       const data = await response.json();
-
       if (response.ok) {
         const text = data?.candidates?.[0]?.content?.parts?.map(part => part.text || '').join('') || '';
         if (text) return res.status(200).json({ text, raw: data, model });
@@ -51,8 +53,7 @@ export default async function handler(req, res) {
         if (![400, 404, 429, 500, 502, 503, 504].includes(response.status)) break;
       }
     }
-
-    return res.status(503).json({ error: `Servizio AI temporaneamente non disponibile. Riprova tra pochi secondi. Dettaglio: ${lastError}` });
+    return res.status(503).json({ error: `Servizio AI temporaneamente non disponibile. Dettaglio: ${lastError}` });
   } catch (error) {
     return res.status(500).json({ error: error.message || 'Errore interno del backend' });
   }
