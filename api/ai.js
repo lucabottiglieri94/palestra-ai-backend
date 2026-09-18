@@ -12,9 +12,21 @@ export default async function handler(req, res) {
       contents: [{ role: 'user', parts: [{ text: body.prompt || '' }] }],
       generationConfig: { temperature: body.temperature ?? 0.7, maxOutputTokens: body.maxOutputTokens ?? 2048 }
     };
-    const serialized = JSON.stringify(payload);
-    const hasImage = /inline_data|inlineData|image_url|image\/|base64/i.test(serialized);
 
+    // Considera immagine solo quando esiste realmente un dato immagine non vuoto.
+    const allParts = (payload.contents || []).flatMap(item => item?.parts || []);
+    const hasImage = allParts.some(part => {
+      const inline = part?.inline_data || part?.inlineData;
+      const imageUrl = part?.image_url;
+      return Boolean(
+        inline && (inline.data || inline.mime_type || inline.mimeType) ||
+        imageUrl && (typeof imageUrl === 'string' ? imageUrl.length > 20 : imageUrl.url) ||
+        part?.fileData?.fileUri ||
+        part?.file_data?.file_uri
+      );
+    });
+
+    // Coach e Scanner testuale, senza foto, usano Groq.
     if (!hasImage && process.env.GROQ_API_KEY) {
       const userText = body.prompt || payload?.contents?.flatMap(c => c.parts || [])?.map(p => p.text || '').join('\n') || '';
       const systemText = body.systemInstruction || payload?.system_instruction?.parts?.map(p => p.text || '').join('\n') || '';
