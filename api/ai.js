@@ -1,5 +1,5 @@
 // Routing AI: Groq for text/microphone, Gemini Vision only for real images.
-// Vercel deploy trigger: Groq text routing active.
+// Vercel deploy trigger: Groq text + Gemini 3 Flash image routing active.
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -62,7 +62,7 @@ export default async function handler(req, res) {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) return res.status(500).json({ error: 'GEMINI_API_KEY non configurata su Vercel' });
     if (!payload.contents || !Array.isArray(payload.contents)) return res.status(400).json({ error: 'Payload Gemini non valido' });
-    const models = ['gemini-3-flash-preview'];
+    const models = ['gemini-3-flash-preview']; // Gemini 3 Flash Vision: foto alimenti e immagini
     let lastError = 'Errore nella risposta Gemini';
     for (const model of models) {
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
